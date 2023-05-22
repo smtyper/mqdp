@@ -14,23 +14,18 @@ public class ParsingWorker : EternalWorker<ParsingWorkItem, ParsingChannel, Pars
 
     protected override async Task ProcessWorkItemAsync(ParsingWorkItem workItem, CancellationToken cancellationToken)
     {
-        var (fileName, dataDate) = workItem;
+        var (fileName, _) = workItem;
 
         var fileSum = new FileSum { FileName = fileName, Sum = (decimal)Random.Shared.NextDouble() };
 
-        await _testDatabase.SetParsingStateAsync(fileName, DateTime.MinValue, workItem.IsInProcessing,
-            cancellationToken);
-
         await _testDatabase.InsertFileSumAsync(fileSum, cancellationToken);
-
-        await _testDatabase.SetParsingStateAsync(fileName, dataDate, workItem.IsInProcessing, cancellationToken);
     }
 }
 
 public record ParsingWorkItem(string FileName, DateTime DataDate) : WorkItem<ParsingWorkItem>
 {
-    public override bool AreEqualByKeyAndValue(ParsingWorkItem workItem) => FileName == workItem.FileName &&
-                                                                            DataDate == workItem.DataDate;
+    public override bool AreEqualByValue(ParsingWorkItem workItem) => FileName == workItem.FileName &&
+                                                                      DataDate == workItem.DataDate;
 
     public override ParsingWorkItem WithMinimalValue() => this with { DataDate = DateTime.MinValue };
 

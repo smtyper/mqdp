@@ -29,7 +29,7 @@ public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem<TWo
             return;
         }
 
-        if (workItem.AreEqualByKeyAndValue(existedWorkItem))
+        if (workItem.AreEqualByValue(existedWorkItem))
             return;
 
         workItem = workItem with { IsInProcessing = true };
@@ -74,7 +74,7 @@ public abstract record WorkItem<T> where T : WorkItem<T>
 {
     public bool IsInProcessing { get; set; }
 
-    public abstract bool AreEqualByKeyAndValue(T workItem);
+    public abstract bool AreEqualByValue(T workItem);
 
     public abstract T WithMinimalValue();
 }

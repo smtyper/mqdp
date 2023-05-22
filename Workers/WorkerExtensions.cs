@@ -103,7 +103,8 @@ public static class WorkerExtensions
             var disabledWorkers = (
                 from service in services
                 let type = service.ImplementationType ?? service.ImplementationFactory?.Method?.ReturnType
-                where type.IsAssignableToGenericType(typeof(Worker<,>))
+                where type.IsAssignableToGenericType(typeof(Worker<,>)) ||
+                      type.IsAssignableToGenericType(typeof(EternalWorker<,,>))
                 let isWorkerEnabled = hostContext.Configuration.GetIsWorkerEnabledValue(type.Name)
                 where isWorkerEnabled.HasValue && !isWorkerEnabled.Value
                 select service
