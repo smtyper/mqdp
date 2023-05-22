@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using MoreLinq;
 using Serilog;
 using Serilog.Debugging;
 

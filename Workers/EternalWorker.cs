@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -12,7 +12,7 @@ namespace Workers;
 
 public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
     BackgroundService, IConfigurableHostedService
-    where TWorkItem : WorkItem
+    where TWorkItem : WorkItem<TWorkItem>
     where TOptions : WorkerSettings, new()
     where TWorkerChannel : StatefullChannel<TWorkItem>
 {
@@ -41,7 +41,7 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
         {
             Logger.LogInformation("{WorkerName} initializing");
 
-            await InitializeAsync().ConfigureAwait(false);
+            await InitializeAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -102,7 +102,7 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
             }
     }
 
-    private async Task WorkAsync(int concurrentTaskIndex, CancellationToken stoppingToken)
+    private async Task WorkAsync(int concurrentTaskIndex, CancellationToken cancellationToken)
     {
         using var concurrentTaskScope =
             Logger.BeginScope(new Dictionary<string, object> { ["ConcurrentTaskIndex"] = concurrentTaskIndex });
@@ -111,9 +111,9 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
         {
             var stopwatch = new Stopwatch();
 
-            await foreach (var workItem in Channel.GetWorkItemsAsync(stoppingToken).ConfigureAwait(false))
+            await foreach (var workItem in Channel.GetWorkItemsAsync(cancellationToken).ConfigureAwait(false))
             {
-                stoppingToken.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 using var workItemScope =
                     Logger.BeginScope(new Dictionary<string, object?> { ["WorkItemKey"] = workItem?.ToString() });
@@ -122,7 +122,9 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
                 {
                     stopwatch.Restart();
 
-                    await ProcessWorkItemAsync(workItem!, stoppingToken).ConfigureAwait(false);
+                    await Channel.SetWorkItemAsync(workItem!.WithMinimalValue(), cancellationToken);
+                    await ProcessWorkItemAsync(workItem, cancellationToken).ConfigureAwait(false);
+                    await Channel.SetWorkItemAsync(workItem with { IsInProcessing = false }, cancellationToken);
 
                     using (Logger.BeginScope(new Dictionary<string, object>
                            {
@@ -131,7 +133,7 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
                            }))
                         Logger.LogInformation("{WorkerName} processed {WorkItemKey} in {ElapsedMilliseconds} ms");
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                 }
                 catch (Exception ex)
@@ -145,7 +147,7 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
                 }
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception ex)
@@ -154,9 +156,8 @@ public abstract class EternalWorker<TWorkItem, TWorkerChannel, TOptions>  :
         }
     }
 
-    protected virtual Task InitializeAsync() => Task.CompletedTask;
-
-    protected abstract IAsyncEnumerable<TWorkItem> GetWorkItemsAsync(CancellationToken cancellationToken);
+    protected virtual async Task InitializeAsync(CancellationToken cancellationToken) =>
+        await Channel.SyncChannelWithStorageAsync(cancellationToken).ConfigureAwait(false);
 
     protected abstract Task ProcessWorkItemAsync(TWorkItem workItem, CancellationToken cancellationToken);
 }

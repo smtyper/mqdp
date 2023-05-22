@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Workers;
 
-public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem
+public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem<TWorkItem>
 {
     private readonly Channel<TWorkItem> _channel;
 
@@ -15,27 +15,29 @@ public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem
         _channel = Channel.CreateUnbounded<TWorkItem>(
             new UnboundedChannelOptions { SingleWriter = false, SingleReader = false });
 
-    public async Task Add(TWorkItem workItem, CancellationToken cancellationToken)
+    public async Task AddAsync(TWorkItem workItem, CancellationToken cancellationToken)
     {
         var existedWorkItem = await GetWorkItemAsync(workItem, cancellationToken);
 
-        if (!workItem.AreFullEqual(existedWorkItem))
+        if (existedWorkItem is null)
         {
-            var workItemInProcessing = workItem with { IsInProcessing = true };
+            workItem = workItem with { IsInProcessing = true };
 
-            if (existedWorkItem is null)
-            {
-                await InsertWorkItemAsync(workItemInProcessing, cancellationToken);
-                await _channel.Writer.WriteAsync(workItemInProcessing, cancellationToken);
-            }
-            else
-            {
-                await UpdateWorkItemAsync(workItemInProcessing, cancellationToken);
+            await SetWorkItemAsync(workItem, cancellationToken);
+            await _channel.Writer.WriteAsync(workItem, cancellationToken);
 
-                if (!existedWorkItem.IsInProcessing)
-                    await _channel.Writer.WriteAsync(workItem, cancellationToken);
-            }
+            return;
         }
+
+        if (workItem.AreEqualByKeyAndValue(existedWorkItem))
+            return;
+
+        workItem = workItem with { IsInProcessing = true };
+
+        await SetWorkItemAsync(workItem, cancellationToken);
+
+        if (!existedWorkItem!.IsInProcessing)
+            await _channel.Writer.WriteAsync(workItem, cancellationToken);
     }
 
     public async IAsyncEnumerable<TWorkItem> GetWorkItemsAsync(
@@ -60,9 +62,7 @@ public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem
             await _channel.Writer.WriteAsync(workItem, cancellationToken);
     }
 
-    protected abstract Task InsertWorkItemAsync(TWorkItem workItem, CancellationToken cancellationToken);
-
-    protected abstract Task UpdateWorkItemAsync(TWorkItem workItem, CancellationToken cancellationToken);
+    public abstract Task SetWorkItemAsync(TWorkItem workItem, CancellationToken cancellationToken);
 
     protected abstract Task<TWorkItem?> GetWorkItemAsync(TWorkItem workItem, CancellationToken cancellationToken);
 
@@ -70,9 +70,11 @@ public abstract class StatefullChannel<TWorkItem> where TWorkItem : WorkItem
         CancellationToken cancellationToken);
 }
 
-public abstract record WorkItem
+public abstract record WorkItem<T> where T : WorkItem<T>
 {
     public bool IsInProcessing { get; set; }
 
-    public abstract bool AreFullEqual(WorkItem? workItem);
+    public abstract bool AreEqualByKeyAndValue(T workItem);
+
+    public abstract T WithMinimalValue();
 }
