@@ -1,23 +1,24 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
-using MoreLinq.Extensions;
 using Workers.Tests.Databases;
-using Workers.Tests.Models.RawFiles;
-using Workers.Tests.Models.States;
+using Workers.Tests.HttpClients;
+using Workers.Tests.Models.Raw;
 using Workers.Tests.Workers.Channels;
-using File = Workers.Tests.Models.RawFiles.File;
 
 namespace Workers.Tests.Workers;
 
-public class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettings>
+internal class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettings>
 {
+    private readonly RosstatGovClient _rosstatGovClient;
     private readonly TestDatabase _testDatabase;
-
     private readonly ParsingChannel _parsingChannel;
 
     public DownloadingWorker(IOptions<DownloadingSettings> options, ILogger<DownloadingWorker> logger,
-        TestDatabase testDatabase, ParsingChannel parsingChannel) : base(options, logger)
+        ParsingChannel parsingChannel, RosstatGovClient rosstatGovClient, TestDatabase testDatabase) :
+        base(options, logger)
     {
+        _rosstatGovClient = rosstatGovClient;
         _testDatabase = testDatabase;
         _parsingChannel = parsingChannel;
     }
@@ -25,73 +26,93 @@ public class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettings
     protected override async IAsyncEnumerable<DownloadingWorkItem> GetWorkItemsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var sourceFiles = GetSourceFilesAsync();
+        var sourceFiles = _rosstatGovClient
+            .GetFinancialRegistriesAsync()
+            .SelectMany(registry => _rosstatGovClient
+                .GetFilesFromRegistryAsync(registry.RegistryId, registry.Url)
+                .Distinct())
+            .Take(Settings.FilesCount)
+            .ToEnumerable();
         var states = await _testDatabase.GetDownloadingStatesAsync(cancellationToken);
 
-        var unprocessedFiles = sourceFiles
-            .Select(pair => new DownloadingState { FileName = pair.FileName, DataDate = pair.DataDate })
-            .FullJoin(states,
-                state => state.FileName,
-                source => (source, state: null)!,
-                state => (source: null, state)!,
-                (source, state) => (source, state))
-            .Where(pair => pair.source?.DataDate != pair.state?.DataDate)
-            .Select(pair => (pair.source?.FileName ?? pair.state.FileName, ChangeDate: pair.source?.DataDate));
+        var unprocessedFiles = sourceFiles.Except(states.Select(state => (state.RegistryId, state.FileName)));
 
-        foreach (var (fileName, dataDate) in unprocessedFiles)
-            yield return new DownloadingWorkItem(fileName, dataDate);
+        foreach (var (registryId, fileName) in unprocessedFiles)
+            yield return new DownloadingWorkItem(registryId, fileName);
     }
 
     protected override async Task ProcessWorkItemAsync(DownloadingWorkItem workItem,
         CancellationToken cancellationToken)
     {
-        var (fileName, dataDate) = workItem;
+        var (registryId, fileName) = workItem;
 
-        var file = await DownloadFileAsync(fileName, dataDate, cancellationToken);
+        var datasetFile = await DownloadFileAsync(registryId, fileName, cancellationToken);
 
-        await _testDatabase.SetDownloadingStateAsync(fileName, DateTime.MinValue, cancellationToken);
+        datasetFile = await _testDatabase.InsertRawDatasetFileAsync(datasetFile, cancellationToken);
+        await AddDatasetFileToParsingChannelAsync(datasetFile, cancellationToken);
 
-        if (file is not null)
+        await _testDatabase.InsertDownloadingStateAsync(registryId, fileName, cancellationToken);
+    }
+
+    private async ValueTask<DatasetFile> DownloadFileAsync(string registryId, string fileName,
+        CancellationToken cancellationToken)
+    {
+        var url = $"opendata/{registryId}/{fileName}";
+        var datasetFile = new DatasetFile { RegistryId = registryId, FileName = fileName };
+
+        var temporaryFolder = Settings.TemporaryFolderPath;
+        var temporaryPath = Path.Combine(temporaryFolder, $"{Guid.NewGuid()}.{fileName}.download");
+
+        var destinationFolder = Path.Combine(Settings.DestinationFolderPath, registryId);
+        var destinationPath = Path.Combine(destinationFolder, fileName);
+
+        if (File.Exists(destinationPath))
+            return datasetFile;
+
+        Directory.CreateDirectory(temporaryFolder);
+
+        await using (var stream = await _rosstatGovClient.GetFileStreamAsync(url, cancellationToken))
         {
-            await _testDatabase.InsertRawFilesFileAsync(file, cancellationToken);
-            await _parsingChannel.AddAsync(new ParsingWorkItem(fileName, dataDate!.Value), cancellationToken);
+            await using var fileStream = File.Create(temporaryPath);
+            await stream.CopyToAsync(fileStream, cancellationToken);
         }
 
-        await _testDatabase.SetDownloadingStateAsync(fileName, dataDate, cancellationToken);
+        Directory.CreateDirectory(destinationFolder);
+        File.Move(temporaryPath, destinationPath);
+
+        return datasetFile;
     }
 
-    private async ValueTask<File?> DownloadFileAsync(string fileName, DateTime? dataDate,
-        CancellationToken cancellationToken) => dataDate is null ?
-        null :
-        new File { FileName = fileName, DataDate = dataDate.Value };
-
-    private static IReadOnlyCollection<(string FileName, DateTime DataDate)> GetSourceFilesAsync()
+    private async ValueTask AddDatasetFileToParsingChannelAsync(DatasetFile datasetFile,
+        CancellationToken cancellationToken)
     {
-        var random = new Random(DateTime.UtcNow.Microsecond);
+        var parsingWorkItem = new ParsingWorkItem(datasetFile.RegistryId, datasetFile.FileName, datasetFile.ChangeDate);
 
-        var skipCount = random.Next(10);
-
-        var files = new[]
-            {
-                "oleg.adm", "oleg.german", "oleg", "oleg", "olegblud", "olegserebry", "olegsxm", "olejan1991",
-                "oleksii.kom", "olelishna", "oleynik.mik", "olga.tyulik", "olkhovskiy", "omg.anomaly", "omuftiev",
-                "onigae", "onokhova", "ooayaoo", "openyshev.r", "opisania", "or56", "orakool", "order",
-                "originalzed", "orrrrb", "os.salenko", "os_alex", "osdmit", "osdmit", "osi-v", "ostashevdv",
-                "os-unlimite"
-            }
-            .Skip(skipCount)
-            .Select(fileName => (fileName, DateTime.UtcNow.AddDays(-1 * random.Next(7))))
-            .ToArray();
-
-        return files;
+        await _parsingChannel.AddAsync(parsingWorkItem, cancellationToken);
     }
 }
 
-public record DownloadingWorkItem(string FileName, DateTime? DataDate)
+internal record DownloadingWorkItem(string RegistryId, string FileName)
 {
-    public override string ToString() => $"{FileName}";
+    public override string ToString() => $"{RegistryId} {FileName}";
 }
 
-public class DownloadingSettings : WorkerSettings
+internal class DownloadingSettings : WorkerSettings
 {
+    private string _destinationFolderPath = null!;
+
+    [Required]
+    public string DestinationFolderPath
+    {
+        get => _destinationFolderPath;
+        set => _destinationFolderPath = string.IsNullOrEmpty(value) ? value : Path.Combine(value, "rosstat");
+    }
+
+    [Required]
+    public string TemporaryFolderPath { get; set; } = null!;
+
+    [Required]
+    public bool SyncDatabaseWithStorage { get; set; }
+
+    public int FilesCount { get; init; }
 }

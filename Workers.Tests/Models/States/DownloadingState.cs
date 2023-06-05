@@ -1,8 +1,8 @@
 ﻿namespace Workers.Tests.Models.States;
 
-public record DownloadingState
+internal record DownloadingState
 {
-    public string FileName { get; init; } = null!;
+    public required string RegistryId { get; init; }
 
-    public DateTime DataDate { get; init; }
+    public required string FileName { get; init; }
 }

@@ -1,10 +1,8 @@
 ﻿namespace Workers.Tests.Models.States;
 
-internal record ParsingState
+public record PredictionState
 {
-    public required string RegistryId { get; init; }
-
-    public required string FileName { get; init; }
+    public Guid HashId { get; init; }
 
     public DateTime ChangeDate { get; init; }
 

@@ -58,18 +58,22 @@
     <Folder Include="Properties" />
     <Folder Include="Security" />
     <Folder Include="Tables\States" />
+    <Folder Include="Tables\Raw\" />
+    <Folder Include="Tables\Rosstat\" />
     <Folder Include="Tables\" />
     <Folder Include="Security\Schemas\" />
-    <Folder Include="Tables\RawFiles\" />
-    <Folder Include="Tables\Calculations" />
+    <Folder Include="Tables\Predictions\" />
   </ItemGroup>
   <ItemGroup>
-    <Build Include="Security\Schemas\RawFiles.sql" />
+    <Build Include="Security\Schemas\Predictions.sql" />
+    <Build Include="Security\Schemas\Raw.sql" />
+    <Build Include="Security\Schemas\Rosstat.sql" />
     <Build Include="Security\Schemas\States.sql" />
-    <Build Include="Tables\RawFiles\File.sql" />
+    <Build Include="Tables\Predictions\BankruptcyPrediction.sql" />
+    <Build Include="Tables\Raw\DatasetFile.sql" />
+    <Build Include="Tables\Rosstat\Report.sql" />
     <Build Include="Tables\States\Downloading.sql" />
     <Build Include="Tables\States\Parsing.sql" />
-    <Build Include="Security\Schemas\Calculations.sql" />
-    <Build Include="Tables\Calculations\FileSum.sql" />
+    <Build Include="Tables\States\Prediction.sql" />
   </ItemGroup>
 </Project>
