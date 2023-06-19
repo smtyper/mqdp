@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.Options;
 using Workers.Tests.Databases;
-using Workers.Tests.Models.Predictions;
 using Workers.Tests.Models.Rosstat;
 using Workers.Tests.Workers.Channels;
 
@@ -192,7 +191,8 @@ internal class PredictionWorker : EternalWorker<PredictionWorkItem, PredictionCh
 
 public record PredictionWorkItem(Guid HashId, DateTime ChangeDate) : WorkItem<PredictionWorkItem>
 {
-    public override bool AreEqualByValue(PredictionWorkItem workItem) => ChangeDate == workItem.ChangeDate;
+    public override bool AreEqualByValue(PredictionWorkItem workItem) => ChangeDate == workItem.ChangeDate &&
+                                                                         IsInProcessing == workItem.IsInProcessing;
 
     public override PredictionWorkItem WithMinimalValue() => this with { ChangeDate = DateTime.MinValue };
 

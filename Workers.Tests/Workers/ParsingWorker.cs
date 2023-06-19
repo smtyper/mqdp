@@ -82,7 +82,8 @@ internal class ParsingWorker : EternalWorker<ParsingWorkItem, ParsingChannel, Pa
 
 internal record ParsingWorkItem(string RegistryId, string FileName, DateTime? ChangeDate) : WorkItem<ParsingWorkItem>
 {
-    public override bool AreEqualByValue(ParsingWorkItem workItem) => ChangeDate == workItem.ChangeDate;
+    public override bool AreEqualByValue(ParsingWorkItem workItem) => ChangeDate == workItem.ChangeDate &&
+                                                                      IsInProcessing == workItem.IsInProcessing;
 
     public override ParsingWorkItem WithMinimalValue() => this with { ChangeDate = DateTime.MinValue };
 

@@ -10,19 +10,6 @@ namespace Workers.Tests.Workers;
 
 internal class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettings>
 {
-    private readonly RosstatGovClient _rosstatGovClient;
-    private readonly TestDatabase _testDatabase;
-    private readonly ParsingChannel _parsingChannel;
-
-    public DownloadingWorker(IOptions<DownloadingSettings> options, ILogger<DownloadingWorker> logger,
-        ParsingChannel parsingChannel, RosstatGovClient rosstatGovClient, TestDatabase testDatabase) :
-        base(options, logger)
-    {
-        _rosstatGovClient = rosstatGovClient;
-        _testDatabase = testDatabase;
-        _parsingChannel = parsingChannel;
-    }
-
     protected override async IAsyncEnumerable<DownloadingWorkItem> GetWorkItemsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -31,6 +18,8 @@ internal class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettin
             .SelectMany(registry => _rosstatGovClient
                 .GetFilesFromRegistryAsync(registry.RegistryId, registry.Url)
                 .Distinct())
+            .OrderBy(file => file.RegistryId)
+            .ThenBy(file => file.FileName)
             .Take(Settings.FilesCount)
             .ToEnumerable();
         var states = await _testDatabase.GetDownloadingStatesAsync(cancellationToken);
@@ -52,6 +41,19 @@ internal class DownloadingWorker : Worker<DownloadingWorkItem, DownloadingSettin
         await AddDatasetFileToParsingChannelAsync(datasetFile, cancellationToken);
 
         await _testDatabase.InsertDownloadingStateAsync(registryId, fileName, cancellationToken);
+    }
+
+    private readonly RosstatGovClient _rosstatGovClient;
+    private readonly TestDatabase _testDatabase;
+    private readonly ParsingChannel _parsingChannel;
+
+    public DownloadingWorker(IOptions<DownloadingSettings> options, ILogger<DownloadingWorker> logger,
+        ParsingChannel parsingChannel, RosstatGovClient rosstatGovClient, TestDatabase testDatabase) :
+        base(options, logger)
+    {
+        _rosstatGovClient = rosstatGovClient;
+        _testDatabase = testDatabase;
+        _parsingChannel = parsingChannel;
     }
 
     private async ValueTask<DatasetFile> DownloadFileAsync(string registryId, string fileName,

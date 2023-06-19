@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using CaseExtensions;
 using LinqToDB;
 using LinqToDB.Data;
 using LinqToDB.DataProvider.SqlServer;
@@ -188,7 +189,7 @@ internal class TestDatabase
     }
 
     public async ValueTask InsertBankruptcyPredictionsAsync(
-        IReadOnlyCollection<Models.Predictions.BankruptcyPrediction> predictions, CancellationToken cancellationToken)
+        IReadOnlyCollection<Models.Rosstat.BankruptcyPrediction> predictions, CancellationToken cancellationToken)
     {
         await using var connection = new TestDataConnection(_settings.ConnectionString);
 
@@ -197,7 +198,7 @@ internal class TestDatabase
             prediction.ChangeDate = DateTime.UtcNow;
 
             if (await connection
-                    .GetTable<Models.Predictions.BankruptcyPrediction>()
+                    .GetTable<Models.Rosstat.BankruptcyPrediction>()
                     .ContainsAsync(prediction, token: cancellationToken))
                 await connection.UpdateAsync(prediction, token: cancellationToken);
             else
@@ -208,10 +209,16 @@ internal class TestDatabase
     internal class TestDataConnection : DataConnection
     {
         public TestDataConnection(string connectionString) : base(new DataOptions()
-            .UseSqlServer(connectionString, SqlServerVersion.v2017, SqlServerProvider.MicrosoftDataSqlClient)
-            .UseMappingSchema(new TestMappingSchema()))
-        {
-        }
+            .UsePostgreSQL(connectionString)
+            .UseMappingSchema(new TestMappingSchema())) => MappingSchema.EntityDescriptorCreatedCallback =
+            (_, descriptor) =>
+            {
+                descriptor.SchemaName = descriptor.SchemaName?.ToSnakeCase();
+                descriptor.TableName = descriptor.TableName.ToSnakeCase();
+
+                foreach (var column in descriptor.Columns)
+                    column.ColumnName = column.ColumnName.ToSnakeCase();
+            };
     }
 
     internal class TestMappingSchema : MappingSchema
@@ -245,9 +252,8 @@ internal class TestDatabase
                 .Property(report => report.HashId).IsPrimaryKey()
                 .Property(report => report.Type).IsNullable(false)
                 .Property(report => report.ValuesDictionary).IsNotColumn();
-
-            builder.Entity<Models.Predictions.BankruptcyPrediction>()
-                .HasSchemaName(nameof(Models.Predictions))
+            builder.Entity<Models.Rosstat.BankruptcyPrediction>()
+                .HasSchemaName(nameof(Models.Rosstat))
                 .Property(prediction => prediction.HashId).IsPrimaryKey()
                 .Property(prediction => prediction.Model).IsNullable(false)
                 .Property(prediction => prediction.Probability).IsNullable(false);

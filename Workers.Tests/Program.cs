@@ -15,6 +15,8 @@ var host = Host.CreateDefaultBuilder(args)
             DataConnection.WriteTraceLine = (message, category, _) => Debug.WriteLine(message, category);
         }
 
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
         services.AddHttpClient<RosstatGovClient>()
             .ConfigureHttpClient(client => client.BaseAddress = new Uri("https://rosstat.gov.ru/"));
 

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.Build.NoTargets/3.5.6">
+
+  <PropertyGroup>
+    <Name>Worker.Tests.Database</Name>
+    <OutputType>Database</OutputType>
+    <TargetFramework>net</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="**" Exclude="bin\**;obj\**;*.msbuildproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Build Include="Schemas\raw.sql" />
+    <Build Include="Schemas\rosstat.sql" />
+    <Build Include="Schemas\states.sql" />
+    <Build Include="Tables\raw\dataset_file.sql" />
+    <Build Include="Tables\rosstat\bankruptcy_prediction.sql" />
+    <Build Include="Tables\rosstat\report.sql" />
+    <Build Include="Tables\states\downloading.sql" />
+    <Build Include="Tables\states\parsing.sql" />
+    <Build Include="Tables\states\prediction.sql" />
+  </ItemGroup>
+
+</Project>
